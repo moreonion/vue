@@ -1,6 +1,6 @@
 /*!
  * Vue.js v1.0.28
- * (c) 2016 Evan You
+ * (c) 2017 Evan You
  * Released under the MIT License.
  */
 (function (global, factory) {
@@ -126,12 +126,11 @@ function _toString(value) {
  */
 
 function toNumber(value) {
-  if (typeof value !== 'string') {
+  if (typeof value !== 'string' || value.trim() === '') {
     return value;
-  } else {
-    var parsed = Number(value);
-    return isNaN(parsed) ? value : parsed;
   }
+  var parsed = Number(value);
+  return isNaN(parsed) ? value : parsed;
 }
 
 /**
@@ -1345,6 +1344,7 @@ function after(el, target) {
  */
 
 function remove(el) {
+  if (!inDoc(el)) return false;
   el.parentNode.removeChild(el);
 }
 
@@ -1665,7 +1665,7 @@ function getOuterHTML(el) {
   }
 }
 
-var commonTagRE = /^(div|p|span|img|a|b|i|br|ul|ol|li|h1|h2|h3|h4|h5|h6|code|pre|table|th|td|tr|form|label|input|select|option|nav|article|section|header|footer)$/i;
+var commonTagRE = /^(div|p|span|img|a|b|i|br|ul|ol|li|h1|h2|h3|h4|h5|h6|code|pre|table|th|td|tr|form|label|input|select|option|nav|article|section|header|footer|main)$/i;
 var reservedTagRE = /^(slot|partial|component)$/i;
 
 var isUnknownElement = undefined;
@@ -5236,6 +5236,12 @@ var keyCodes = {
   down: 40
 };
 
+var eventKeys = ['stop', 'prevent', 'self', 'capture'];
+var modifierKeys = ['ctrl', 'shift', 'alt', 'meta'];
+var namedKeys = eventKeys.concat(modifierKeys).sort();
+
+var modifierKeyHandlers = {};
+
 function keyFilter(handler, keys) {
   var codes = keys.map(function (key) {
     var charCode = key.charCodeAt(0);
@@ -5280,6 +5286,17 @@ function selfFilter(handler) {
   };
 }
 
+modifierKeys.forEach(function (key) {
+  var keyName = key + 'Key';
+  modifierKeyHandlers[key] = function (handler) {
+    return function (e) {
+      if (e[keyName]) {
+        return handler.call(this, e);
+      }
+    };
+  };
+});
+
 var on$1 = {
 
   priority: ON,
@@ -5298,6 +5315,8 @@ var on$1 = {
   },
 
   update: function update(handler) {
+    var _this = this;
+
     // stub a noop for v-on with no value,
     // e.g. @mousedown.prevent
     if (!this.descriptor.raw) {
@@ -5319,9 +5338,14 @@ var on$1 = {
     if (this.modifiers.self) {
       handler = selfFilter(handler);
     }
+    modifierKeys.forEach(function (key) {
+      if (_this.modifiers[key]) {
+        handler = modifierKeyHandlers[key](handler);
+      }
+    });
     // key filter
     var keys = Object.keys(this.modifiers).filter(function (key) {
-      return key !== 'stop' && key !== 'prevent' && key !== 'self' && key !== 'capture';
+      return namedKeys.indexOf(key) === -1;
     });
     if (keys.length) {
       handler = keyFilter(handler, keys);
@@ -6598,18 +6622,18 @@ var animDurationProp = animationProp + 'Duration';
  * transitions but not raf (e.g. Android 4.2 browser) - since
  * these environments are usually slow, we are giving it a
  * relatively large timeout.
+ *
+ * Binding to window is necessary to make hot reload work in
+ * IE in strict mode
  */
 
-var raf = inBrowser && window.requestAnimationFrame;
-var waitForTransitionStart = raf
-/* istanbul ignore next */
-? function (fn) {
+var raf = inBrowser && window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : setTimeout;
+
+function waitForTransitionStart(fn) {
   raf(function () {
     raf(fn);
   });
-} : function (fn) {
-  setTimeout(fn, 50);
-};
+}
 
 /**
  * A Transition object that encapsulates the state and logic
